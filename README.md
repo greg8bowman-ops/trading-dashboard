@@ -48,7 +48,7 @@ The app opens at `http://localhost:8501`.
 
 ```
 trading_dashboard/
-├── app.py                  # Streamlit UI — 8 sections
+├── app.py                  # Streamlit UI — 9 sections
 ├── requirements.txt
 ├── data/                   # journal.csv persists here
 └── modules/
@@ -59,6 +59,7 @@ trading_dashboard/
     ├── strategies.py       # setup detectors + EV scoring + regime fit
     ├── risk.py             # position sizing + checklist + portfolio risk
     ├── scanner.py          # orchestrator: the daily pipeline & ranking
+    ├── opening_range.py    # US 09:30 ET opening-range breakout (intraday)
     ├── journal.py          # CSV persistence + performance analytics
     └── education.py        # daily learning content from real analysis
 ```
@@ -69,16 +70,24 @@ real results.
 
 ---
 
-## 🖥️ The 8 sections
+## 🖥️ The 9 sections
 
 1. **Overview** — breadth, momentum, relative-strength map.
 2. **Regime** — benchmark + per-instrument regime with the *evidence* used, plus candle charts.
 3. **Scanner** — every detected setup ranked by expectancy; shows which pass the checklist.
 4. **Recommendations** — 0–3 trades with entry/stop/targets, sizing, EV, thesis, checklist, one-click journaling.
-5. **Risk** — portfolio heat vs daily/weekly/per-trade limits.
-6. **Performance** — win rate, profit factor, expectancy, Sharpe, max DD, equity curve (with small-sample warnings).
-7. **Journal** — full trade log; record outcomes to feed analytics.
-8. **Learning Centre** — lesson of the day, why-selected, institutional thinking, mistakes, skill drill, vocabulary — all generated from today's scan.
+5. **Opening Range** — US 09:30 ET opening-range breakout. Waits for the first 15–30 min range to *form*, then flags a breakout only after it completes AND price closes beyond it with confirmation (daily-trend aligned or volume surge). Uses **delayed** intraday data — a planning prompt, not a live execution trigger.
+6. **Risk** — portfolio heat vs daily/weekly/per-trade limits.
+7. **Performance** — win rate, profit factor, expectancy, Sharpe, max DD, equity curve (with small-sample warnings).
+8. **Journal** — full trade log; record outcomes to feed analytics.
+9. **Learning Centre** — lesson of the day, why-selected, institutional thinking, mistakes, skill drill, vocabulary — all generated from today's scan.
+
+---
+
+## ⏱️ Update cadence
+
+- **Daily Recommendations** run on **daily** price bars — they meaningfully change **once per day**, after the prior session closes. Check once each morning; re-scanning intraday shows the same daily-bar analysis.
+- **Opening Range** is the one intraday section. After the US 09:30 ET open it tracks the forming range, then evaluates breakouts once the 15/30-min range completes. Data is delayed ~15 min, so it's for planning, not split-second entries.
 
 ---
 
