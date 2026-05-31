@@ -283,18 +283,66 @@ with tabs[3]:
                 st.markdown(f"{'✅' if ok else '❌'} {q}")
             st.caption("*Win prob / EV are model estimates, not measured edges.")
 
+            st.markdown("---")
+            st.markdown("**Size & log this trade**")
+            # Editable order size — defaults to the suggested units, user can override
+            # with their actual broker fill before logging.
+            suggested_units = float(r["units"])
+            user_units = st.number_input(
+                "Order size (units) — edit to match your actual fill",
+                min_value=0.0, value=round(suggested_units, 4),
+                step=max(round(suggested_units / 20, 4), 0.0001),
+                format="%.4f", key=f"units{i}",
+            )
+
+            # Recompute P&L from the USER's size, respecting direction.
+            # For both long and short, distance to stop is a loss, distance to
+            # target is a gain — sign handled by construction below.
+            stop_dist = abs(r["entry"] - r["stop"])
+            t1_dist = abs(r["target1"] - r["entry"])
+            t2_dist = abs(r["target2"] - r["entry"])
+            stop_pnl = -user_units * stop_dist          # always a loss
+            t1_pnl = user_units * t1_dist               # gain at target 1
+            t2_pnl = user_units * t2_dist               # gain at target 2
+            actual_risk_pct = (abs(stop_pnl) / equity * 100) if equity else 0
+
+            pcols = st.columns(4)
+            pcols[0].markdown(f"<div class='metric-label'>If STOP hit</div>"
+                              f"<div class='mono' style='color:#f29b9b'>−£{fmt(abs(stop_pnl),2)}</div>",
+                              unsafe_allow_html=True)
+            pcols[1].markdown(f"<div class='metric-label'>At Target 1</div>"
+                              f"<div class='mono' style='color:#6fe0a8'>+£{fmt(t1_pnl,2)}</div>",
+                              unsafe_allow_html=True)
+            pcols[2].markdown(f"<div class='metric-label'>At Target 2</div>"
+                              f"<div class='mono' style='color:#6fe0a8'>+£{fmt(t2_pnl,2)}</div>",
+                              unsafe_allow_html=True)
+            pcols[3].markdown(f"<div class='metric-label'>Actual risk</div>"
+                              f"<div class='mono'>{fmt(actual_risk_pct,2)}%</div>",
+                              unsafe_allow_html=True)
+
+            # Warn if the manual size pushes risk beyond the account rule.
+            if actual_risk_pct > config.ACCOUNT["max_risk_per_trade_pct"] + 0.001:
+                st.warning(f"⚠️ This size risks {actual_risk_pct:.2f}% of equity — above your "
+                           f"{config.ACCOUNT['max_risk_per_trade_pct']}% per-trade limit. "
+                           "Consider reducing units.", icon="⚠️")
+
             if st.button(f"📓 Log #{i} to journal", key=f"log{i}"):
                 journal.add_entry({
                     "date": datetime.now().strftime("%Y-%m-%d"),
                     "instrument": r["instrument"], "strategy": r["strategy"],
                     "direction": r["direction"], "entry": r["entry"], "stop": r["stop"],
                     "target1": r["target1"], "target2": r["target2"],
-                    "risk_pct": r["risk_pct"], "monetary_risk": r["monetary_risk"],
+                    "risk_pct": round(actual_risk_pct, 3),
+                    "monetary_risk": round(abs(stop_pnl), 2),
                     "win_prob": r["win_prob"], "ev_R": r["ev_R"],
                     "confidence": r["confidence"], "regime": r["inst_regime"],
                     "status": "open", "outcome_R": "", "pnl": "", "notes": "",
+                    "units": round(user_units, 4),
+                    "stop_pnl": round(stop_pnl, 2),
+                    "target1_pnl": round(t1_pnl, 2),
                 })
-                st.success(f"Logged {r['instrument']} to journal.")
+                st.success(f"Logged {r['instrument']} — {user_units:.4f} units, "
+                           f"£{abs(stop_pnl):.2f} at risk.")
         st.markdown("</div>", unsafe_allow_html=True)
 
 # ===== 5. OPENING RANGE (US 09:30 ET) =====
