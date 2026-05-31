@@ -25,6 +25,7 @@ from datetime import datetime
 
 from modules import config, scanner, regime as regime_mod, indicators as ind
 from modules import risk as risk_mod, journal, education, data_engine
+from modules import opening_range as orb_mod
 
 # ---------------------------------------------------------------------------
 # PAGE CONFIG & THEME
@@ -141,7 +142,7 @@ st.markdown(f"<div class='card'>{env_reason}</div>", unsafe_allow_html=True)
 # ---------------------------------------------------------------------------
 tabs = st.tabs([
     "🌐 Overview", "🧭 Regime", "🔍 Scanner", "🎯 Recommendations",
-    "🛡️ Risk", "📊 Performance", "📓 Journal", "🎓 Learning Centre",
+    "🔔 Opening Range", "🛡️ Risk", "📊 Performance", "📓 Journal", "🎓 Learning Centre",
 ])
 
 # ===== 1. MARKET OVERVIEW =====
@@ -296,8 +297,95 @@ with tabs[3]:
                 st.success(f"Logged {r['instrument']} to journal.")
         st.markdown("</div>", unsafe_allow_html=True)
 
-# ===== 5. RISK =====
+# ===== 5. OPENING RANGE (US 09:30 ET) =====
 with tabs[4]:
+    st.subheader("🔔 Opening Range Breakout — US Session (09:30 ET)")
+    st.caption("Tracks the first 15–30 minutes after the US open, lets the range "
+               "FORM, then flags a breakout only after the range completes AND price "
+               "closes beyond it with confirmation. It never fires in the opening "
+               "minutes — that window is noise.")
+
+    st.markdown("<div class='banner'>⚠️ Intraday data here is via yfinance and is "
+                "<b>delayed (typically ~15 min)</b>, not a live feed. Treat signals as "
+                "study/planning prompts, NOT real-time execution triggers. The opening "
+                "range is a high-variance window even when traded with discipline.</div>",
+                unsafe_allow_html=True)
+
+    rng_choice = st.radio("Opening range length", [15, 30], index=1, horizontal=True,
+                          format_func=lambda m: f"{m} minutes")
+
+    # Daily direction per ORB ticker (from daily bars) to confirm breakouts.
+    @st.cache_data(ttl=900, show_spinner="Checking opening range…")
+    def _orb_scan(range_minutes):
+        directions = {}
+        for t in orb_mod.ORB_TICKERS:
+            df, _real = data_engine.fetch_daily(t, 120)
+            if df is not None and len(df) > 60:
+                _reg, score, _ev = regime_mod.classify_regime(df)
+                directions[t] = score.get("direction", "mixed")
+            else:
+                directions[t] = "mixed"
+        return orb_mod.scan_orb(directions, range_minutes=range_minutes)
+
+    session_status, orb_results = _orb_scan(rng_choice)
+
+    status_msg = {
+        "pre-open": "🌙 US session hasn't opened yet (opens 09:30 ET). Check back after the open.",
+        "building": f"⏳ Opening range is still forming. No signals until the {rng_choice}-min range completes — by design.",
+        "active": "🟢 Session active — range complete. Any confirmed breakouts appear below.",
+        "closed": "🔒 US session closed for today. Showing the final read.",
+    }.get(session_status, "")
+    st.info(status_msg)
+
+    any_real = any(r["is_real_data"] for r in orb_results)
+    if not any_real:
+        st.warning("No live intraday data reached (offline, or US market closed). "
+                   "Signals require an active session with data.", icon="🧪")
+
+    signals = [r for r in orb_results if r["signal"]]
+    if signals:
+        st.markdown(f"**{len(signals)} confirmed breakout(s):**")
+        for r in signals:
+            s = r["signal"]
+            tag = "tag-long" if s["direction"] == "long" else "tag-short"
+            conf = "daily-trend aligned" if s["aligned_with_daily"] else "volume-confirmed"
+            sizing = risk_mod.position_size(equity, s["entry"], s["stop"])
+            units = sizing["units"] if sizing else 0
+            st.markdown(f"<div class='card'>"
+                        f"<h3 style='margin:0'>{r['name']} "
+                        f"<span class='tag {tag}'>{s['direction'].upper()}</span> "
+                        f"<span style='font-size:0.78rem;color:#8b93a7'>{conf}</span></h3>",
+                        unsafe_allow_html=True)
+            cols = st.columns(5)
+            cols[0].markdown(f"<div class='metric-label'>Entry</div><div class='mono'>{s['entry']:.2f}</div>", unsafe_allow_html=True)
+            cols[1].markdown(f"<div class='metric-label'>Stop</div><div class='mono'>{s['stop']:.2f}</div>", unsafe_allow_html=True)
+            cols[2].markdown(f"<div class='metric-label'>Target 1</div><div class='mono'>{s['target1']:.2f}</div>", unsafe_allow_html=True)
+            cols[3].markdown(f"<div class='metric-label'>R:R</div><div class='mono'>{s['rr']}</div>", unsafe_allow_html=True)
+            cols[4].markdown(f"<div class='metric-label'>Size (1%)</div><div class='mono'>{units:.2f} u</div>", unsafe_allow_html=True)
+            st.markdown(f"<div class='evidence'>Range: {r['range_low']:.2f} – {r['range_high']:.2f} "
+                        f"({r['range_minutes']}-min) · {r['note']}</div>", unsafe_allow_html=True)
+            st.markdown("</div>", unsafe_allow_html=True)
+    elif session_status in ("active", "closed"):
+        st.markdown("<div class='card'>No confirmed opening-range breakouts. Most days "
+                    "either stay inside the range or break out without confirmation — "
+                    "and the disciplined response is to pass. No signal is a valid result.</div>",
+                    unsafe_allow_html=True)
+
+    with st.expander("All tracked tickers & their opening-range state"):
+        rows = []
+        for r in orb_results:
+            rows.append({
+                "Ticker": r["ticker"],
+                "Status": r["status"],
+                "Range low": None if r["range_low"] is None else round(r["range_low"], 2),
+                "Range high": None if r["range_high"] is None else round(r["range_high"], 2),
+                "Signal": r["signal"]["direction"] if r["signal"] else "—",
+                "Note": r["note"],
+            })
+        st.dataframe(pd.DataFrame(rows), use_container_width=True, height=380)
+
+# ===== 6. RISK =====
+with tabs[5]:
     st.subheader("Risk Dashboard")
     open_trades = recs  # treat current recs as prospective portfolio
     pr = risk_mod.portfolio_risk(open_trades, equity)
@@ -329,8 +417,8 @@ with tabs[4]:
     else:
         st.info("No prospective positions — zero risk on. Capital fully preserved.")
 
-# ===== 6. PERFORMANCE =====
-with tabs[5]:
+# ===== 7. PERFORMANCE =====
+with tabs[6]:
     st.subheader("Performance Analytics")
     perf = journal.performance(equity)
     if perf["n_trades"] == 0:
@@ -359,8 +447,8 @@ with tabs[5]:
                           margin=dict(l=10, r=10, t=40, b=10))
         st.plotly_chart(fig, use_container_width=True)
 
-# ===== 7. JOURNAL =====
-with tabs[6]:
+# ===== 8. JOURNAL =====
+with tabs[7]:
     st.subheader("Trading Journal")
     _backend, _detail = journal.backend_status()
     if _backend == "Google Sheets":
@@ -388,8 +476,8 @@ with tabs[6]:
         else:
             st.caption("No open trades to close.")
 
-# ===== 8. LEARNING CENTRE =====
-with tabs[7]:
+# ===== 9. LEARNING CENTRE =====
+with tabs[8]:
     st.subheader("🎓 Daily Learning Centre")
     st.caption("Generated from TODAY's actual analysis — not generic lessons.")
 
