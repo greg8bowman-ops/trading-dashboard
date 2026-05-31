@@ -27,7 +27,7 @@ COLUMNS = [
     "date", "instrument", "strategy", "direction", "entry", "stop",
     "target1", "target2", "risk_pct", "monetary_risk", "win_prob",
     "ev_R", "confidence", "regime", "status", "outcome_R", "pnl",
-    "notes",
+    "notes", "units", "stop_pnl", "target1_pnl",
 ]
 
 CSV_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "journal.csv")
