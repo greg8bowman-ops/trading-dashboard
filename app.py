@@ -465,6 +465,54 @@ with tabs[5]:
     else:
         st.info("No prospective positions — zero risk on. Capital fully preserved.")
 
+    # ---- Spread-bet £/point converter ----
+    st.markdown("---")
+    st.markdown("### 🔁 Spread-bet sizing helper (e.g. IG)")
+    st.caption("Spread betting sizes in £ per point, not units. This converts between "
+               "your risk in £, your stop distance in POINTS, and the £/point stake to "
+               "enter at your broker. Match the £ RISK — the unit numbers will never "
+               "look alike, and that's fine.")
+
+    cc = st.columns(3)
+    risk_gbp = cc[0].number_input(
+        "Risk (£)", min_value=0.0,
+        value=round(equity * config.ACCOUNT["max_risk_per_trade_pct"] / 100, 2),
+        step=5.0, key="sb_risk",
+        help="Default = your 1% per-trade limit on current equity.")
+    stop_pts = cc[1].number_input(
+        "Stop distance (points)", min_value=0.1, value=73.0, step=1.0,
+        key="sb_stop", help="The stop distance your broker shows, in points/pips.")
+    # Forward: £/point you should stake
+    stake = risk_gbp / stop_pts if stop_pts > 0 else 0
+    cc[2].markdown(f"<div class='card' style='margin-top:6px'>"
+                   f"<div class='metric-label'>Stake to enter</div>"
+                   f"<div class='metric-big' style='font-size:1.4rem'>£{fmt(stake,2)}</div>"
+                   f"<div class='evidence'>per point</div></div>", unsafe_allow_html=True)
+
+    # Reverse check: given a stake, what's the actual £ risk?
+    st.markdown("**Reverse check** — enter a £/point stake to see the real £ risk it carries:")
+    rc = st.columns(3)
+    stake_in = rc[0].number_input("£/point stake", min_value=0.0, value=round(stake, 2),
+                                  step=0.1, key="sb_stake_in")
+    actual_risk = stake_in * stop_pts
+    actual_pct = (actual_risk / equity * 100) if equity else 0
+    rc[1].markdown(f"<div class='card' style='margin-top:6px'>"
+                   f"<div class='metric-label'>Risk at this stake</div>"
+                   f"<div class='metric-big' style='font-size:1.4rem'>£{fmt(actual_risk,2)}</div></div>",
+                   unsafe_allow_html=True)
+    rc[2].markdown(f"<div class='card' style='margin-top:6px'>"
+                   f"<div class='metric-label'>% of equity</div>"
+                   f"<div class='metric-big' style='font-size:1.4rem'>{fmt(actual_pct,2)}%</div></div>",
+                   unsafe_allow_html=True)
+    if actual_pct > config.ACCOUNT["max_risk_per_trade_pct"] + 0.001:
+        st.warning(f"⚠️ £{stake_in:.2f}/point over a {stop_pts:.0f}-point stop risks "
+                   f"{actual_pct:.2f}% — above your {config.ACCOUNT['max_risk_per_trade_pct']}% "
+                   "limit. Reduce the stake.", icon="⚠️")
+    st.caption("Note: spread-bet P&L is in the instrument's points. Currency conversion "
+               "(e.g. USD pairs settling to £) and overnight financing mean your broker's "
+               "figure may differ slightly — always sanity-check against the broker's own "
+               "risk display before submitting.")
+
 # ===== 7. PERFORMANCE =====
 with tabs[6]:
     st.subheader("Performance Analytics")
